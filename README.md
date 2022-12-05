@@ -3,7 +3,7 @@
 Source: https://github.com/sherlock-audit/2022-11-buffer-judging/issues/85 
 
 ## Found by 
-KingNFT, adriro, bin2chen, 0x52, kaliberpoziomka
+hansfriese, adriro, 0x52, bin2chen, kaliberpoziomka, KingNFT
 
 ## Summary
 
@@ -122,7 +122,7 @@ Pass the asset address through so the BufferBinaryOptions contract can validate 
 Source: https://github.com/sherlock-audit/2022-11-buffer-judging/issues/82 
 
 ## Found by 
-\_\_141345\_\_, 0x52
+0x52, \_\_141345\_\_
 
 ## Summary
 
@@ -159,60 +159,12 @@ Yes we were planning to adjust the lockup accordingly.
 
 
 
-# Issue H-3: Early depositors to BufferBinaryPool can manipulate exchange rates to steal funds from later depositors 
-
-Source: https://github.com/sherlock-audit/2022-11-buffer-judging/issues/81 
-
-## Found by 
-dipp, gandu, rvierdiiev, Ruhum, hansfriese, cccz, 0x52, ctf\_sec, joestakey
-
-## Summary
-
-To calculate the exchange rate for shares in BufferBinaryPool it divides the total supply of shares by the totalTokenXBalance of the vault. The first deposit can mint a very small number of shares then donate tokenX to the vault to grossly manipulate the share price. When later depositor deposit into the vault they will lose value due to precision loss and the adversary will profit.
-
-## Vulnerability Detail
-
-    function totalTokenXBalance()
-        public
-        view
-        override
-        returns (uint256 balance)
-    {
-        return tokenX.balanceOf(address(this)) - lockedPremium;
-    }
-
-Share exchange rate is calculated using the total supply of shares and the totalTokenXBalance, which leaves it vulnerable to exchange rate manipulation. As an example, assume tokenX == USDC. An adversary can mint a single share, then donate 1e8 USDC. Minting the first share established a 1:1 ratio but then donating 1e8 changed the ratio to 1:1e8. Now any deposit lower than 1e8 (100 USDC) will suffer from precision loss and the attackers share will benefit from it.
-
-## Impact
-
-Adversary can effectively steal funds from later users through precision loss
-
-## Code Snippet
-
-https://github.com/sherlock-audit/2022-11-buffer/blob/main/contracts/contracts/core/BufferBinaryPool.sol#L405-L412
-
-## Tool used
-
-Manual Review
-
-## Recommendation
-
-Require a small minimum deposit (i.e. 1e6) 
-
-## Discussion
-
-**bufferfinance**
-
-We'll add the initial liquidity and then burn those LP tokens.
-
-
-
 # Issue M-1: resolveQueuedTrades() ERC777 re-enter to steal funds 
 
 Source: https://github.com/sherlock-audit/2022-11-buffer-judging/issues/130 
 
 ## Found by 
-bin2chen, HonorLt, KingNFT
+KingNFT, bin2chen, HonorLt
 
 ## Summary
 _openQueuedTrade() does not follow the “Checks Effects Interactions” principle and may lead to re-entry to steal the funds
@@ -266,76 +218,7 @@ follow “Checks Effects Interactions”
 ```
 
 
-# Issue M-2: When tokenX is an ERC777 token, users can bypass maxLiquidity 
-
-Source: https://github.com/sherlock-audit/2022-11-buffer-judging/issues/112 
-
-## Found by 
-cccz
-
-## Summary
-When tokenX is an ERC777 token, users can use callbacks to provide liquidity exceeding maxLiquidity
-## Vulnerability Detail
-In BufferBinaryPool._provide, when tokenX is an ERC777 token, the tokensToSend function of account will be called in tokenX.transferFrom before sending tokens. When the user calls provide again in tokensToSend, since BufferBinaryPool has not received tokens at this time, totalTokenXBalance() has not increased, and the following checks can be bypassed, so that users can provide liquidity exceeding maxLiquidity.
-```solidity
-         require(
-             balance + tokenXAmount <= maxLiquidity,
-             "Pool has already reached it's max limit"
-         );
-```
-## Impact
-users can provide liquidity exceeding maxLiquidity.
-
-## Code Snippet
-https://github.com/sherlock-audit/2022-11-buffer/blob/main/contracts/contracts/core/BufferBinaryPool.sol#L216-L240
-## Tool used
-
-Manual Review
-
-## Recommendation
-Change to
-```diff
-    function _provide(
-        uint256 tokenXAmount,
-        uint256 minMint,
-        address account
-    ) internal returns (uint256 mint) {
-+        bool success = tokenX.transferFrom(
-+            account,
-+            address(this),
-+            tokenXAmount
-+        );
-        uint256 supply = totalSupply();
-        uint256 balance = totalTokenXBalance();
-
-        require(
-            balance + tokenXAmount <= maxLiquidity,
-            "Pool has already reached it's max limit"
-        );
-
-        if (supply > 0 && balance > 0)
-            mint = (tokenXAmount * supply) / (balance);
-        else mint = tokenXAmount * INITIAL_RATE;
-
-        require(mint >= minMint, "Pool: Mint limit is too large");
-        require(mint > 0, "Pool: Amount is too small");
-
--        bool success = tokenX.transferFrom(
--            account,
--            address(this),
--            tokenXAmount
--        );
-```
-
-## Discussion
-
-**0x00052**
-
-Neither tokenX (USDC or BFR) are ERC777, so not applicable to current contracts. Something to consider if the team plans to add and ERC777
-
-
-
-# Issue M-3: The `_fee()` function is wrongly implemented in the code 
+# Issue M-2: The `_fee()` function is wrongly implemented in the code 
 
 Source: https://github.com/sherlock-audit/2022-11-buffer-judging/issues/95 
 
@@ -435,12 +318,122 @@ The `_fee()` function needs to calculate the fees in this way
 total_fee = (5000 * amount)/ (10000 - sf)
 ```
 
+# Issue M-3: resolveQueuedTrades is intended to be non atomic but invalid signature can still cause entire transaction to revert 
+
+Source: https://github.com/sherlock-audit/2022-11-buffer-judging/issues/84 
+
+## Found by 
+0x52
+
+## Summary
+
+BufferRouter#resolveQueuedTrades and unlockOptions attempt to be non atomic (i.e. doesn't revert the transaction if one fails) but an invalid signature can still cause the entire transaction to revert, because the ECDSA.recover sub call in _validateSigner can still revert.
+
+## Vulnerability Detail
+
+    function _validateSigner(
+        uint256 timestamp,
+        address asset,
+        uint256 price,
+        bytes memory signature
+    ) internal view returns (bool) {
+        bytes32 digest = ECDSA.toEthSignedMessageHash(
+            keccak256(abi.encodePacked(timestamp, asset, price))
+        );
+        address recoveredSigner = ECDSA.recover(digest, signature);
+        return recoveredSigner == publisher;
+    }
+
+_validateSigner can revert at the ECDSA.recover sub call breaking the intended non atomic nature of BufferRouter#resolveQueuedTrades and unlockOptions.
+
+## Impact
+
+BufferRouter#resolveQueuedTrades and unlockOptions don't function as intended if signature is malformed
+
+## Code Snippet
+
+https://github.com/sherlock-audit/2022-11-buffer/blob/main/contracts/contracts/core/BufferRouter.sol#L260-L271
+
+## Tool used
+
+Manual Review
+
+## Recommendation
+
+Use a try statement inside _validateSigner to avoid any reverts:
+
+        function _validateSigner(
+            uint256 timestamp,
+            address asset,
+            uint256 price,
+            bytes memory signature
+        ) internal view returns (bool) {
+            bytes32 digest = ECDSA.toEthSignedMessageHash(
+                keccak256(abi.encodePacked(timestamp, asset, price))
+            );
+    -       address recoveredSigner = ECDSA.recover(digest, signature);
+
+    +       try ECDSA.recover(digest, signature) returns (address recoveredSigner) {
+    +           return recoveredSigner == publisher;
+    +       } else {
+    +           return false;
+    +       }
+        }
+
+## Discussion
+
+**bufferfinance**
+
+The protocol has been tested against wrong signatures.
+[https://github.com/sherlock-audit/2022-11-buffer/blob/main/contracts/tests/test_router.py#L815](url)
+
+**0x00052**
+
+Escalate for 10 USDC.
+
+My submission is valid and sponsor's comment here is inaccurate. ECDSA.recover will revert in the _throwError subcall under quite a few conditions not covered by their tests, including signature of invalid length and signature that resolve to address(0).
+
+https://github.com/OpenZeppelin/openzeppelin-contracts/blob/24d1bb668a1152528a6e6d71c2e285d227ed19d9/contracts/utils/cryptography/ECDSA.sol#L88-L92 
+
+**sherlock-admin**
+
+ > Escalate for 10 USDC.
+> 
+> My submission is valid and sponsor's comment here is inaccurate. ECDSA.recover will revert in the _throwError subcall under quite a few conditions not covered by their tests, including signature of invalid length and signature that resolve to address(0).
+> 
+> https://github.com/OpenZeppelin/openzeppelin-contracts/blob/24d1bb668a1152528a6e6d71c2e285d227ed19d9/contracts/utils/cryptography/ECDSA.sol#L88-L92 
+
+You've created a valid escalation for 10 USDC!
+
+To remove the escalation from consideration: Delete your comment.
+To change the amount you've staked on this escalation: Edit your comment **(do not create a new comment)**.
+
+You may delete or edit your escalation comment anytime before the 48-hour escalation window closes. After that, the escalation becomes final.
+
+**hrishibhat**
+
+Escalation accepted 
+
+Invalid signatures resolving to address(0) reverts _validateSigner 
+
+**sherlock-admin**
+
+> Escalation accepted 
+> 
+> Invalid signatures resolving to address(0) reverts _validateSigner 
+
+This issue's escalations have been accepted!
+
+Contestants' payouts and scores will be updated according to the changes made on this issue.
+
+
+
 # Issue M-4: Insufficient support for fee-on-transfer tokens 
 
 Source: https://github.com/sherlock-audit/2022-11-buffer-judging/issues/76 
 
 ## Found by 
-eierina, dipp, KingNFT, rvierdiiev, cccz, supernova, Deivitto, \_\_141345\_\_, jonatascm, pashov
+pashov, supernova, rvierdiiev, Deivitto, jonatascm, KingNFT, \_\_141345\_\_, cccz, dipp, Bnke0x0, eierina
 
 ## Summary
 
@@ -491,7 +484,7 @@ Not supporting fee-on-transfer tokens for now.
 Source: https://github.com/sherlock-audit/2022-11-buffer-judging/issues/73 
 
 ## Found by 
-ak1, bin2chen, 0x4non, jonatascm, sach1r0, pashov, HonorLt, peanuts, m\_Rassska, adriro, Deivitto, \_\_141345\_\_, eierina, 0xcc, rvierdiiev, cccz, minhtrng, ctf\_sec, aphak5010, Bnke0x0, eyexploit, hansfriese, 0x007
+pashov, hansfriese, adriro, 0x4non, Deivitto, 0xadrii, eyexploit, Bnke0x0, ak1, HonorLt, aphak5010, 0xcc, cccz, rvierdiiev, 0x007, peanuts, jonatascm, bin2chen, ctf\_sec, eierina, minhtrng, 0xheynacho, sach1r0, \_\_141345\_\_, m\_Rassska
 
 ## Summary
 
