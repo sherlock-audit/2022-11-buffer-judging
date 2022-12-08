@@ -3,7 +3,7 @@
 Source: https://github.com/sherlock-audit/2022-11-buffer-judging/issues/85 
 
 ## Found by 
-hansfriese, adriro, 0x52, bin2chen, kaliberpoziomka, KingNFT
+kaliberpoziomka, KingNFT, hansfriese, adriro, 0x52, bin2chen
 
 ## Summary
 
@@ -117,12 +117,23 @@ Manual Review
 
 Pass the asset address through so the BufferBinaryOptions contract can validate it is being called with the correct asset
 
+## Discussion
+
+**0x00052**
+
+Fixed in [PR#2](https://github.com/bufferfinance/Buffer-Protocol-v2/pull/2)
+
+Changes look good. The asset pair is now stored in BufferBinaryOptions and BufferRouter directly reads it from there instead of relying on user/keeper to supply the correct asset.
+
+
+
+
 # Issue H-2: Design of BufferBinaryPool allows LPs to game option expiry 
 
 Source: https://github.com/sherlock-audit/2022-11-buffer-judging/issues/82 
 
 ## Found by 
-0x52, \_\_141345\_\_
+\_\_141345\_\_, 0x52
 
 ## Summary
 
@@ -157,6 +168,16 @@ I strongly recommend an epoch based withdraw and deposit buffer to prevent a sit
 Yes we were planning to adjust the lockup accordingly.
 
 
+**bufferfinance**
+
+Doesn't need to be fixed. The admin will adjust the config accordingly.
+
+**0x00052**
+
+Fixed in [PR#9](https://github.com/bufferfinance/Buffer-Protocol-v2/pull/9)
+
+lockupPeriod is now set in constructor so that it is adjustable
+
 
 
 # Issue M-1: resolveQueuedTrades() ERC777 re-enter to steal funds 
@@ -164,7 +185,7 @@ Yes we were planning to adjust the lockup accordingly.
 Source: https://github.com/sherlock-audit/2022-11-buffer-judging/issues/130 
 
 ## Found by 
-KingNFT, bin2chen, HonorLt
+HonorLt, bin2chen, KingNFT
 
 ## Summary
 _openQueuedTrade() does not follow the “Checks Effects Interactions” principle and may lead to re-entry to steal the funds
@@ -216,6 +237,16 @@ follow “Checks Effects Interactions”
         emit OpenTrade(queuedTrade.user, queueId, optionId);
     }
 ```
+
+
+## Discussion
+
+**0x00052**
+
+Fixed in [PR#8](https://github.com/bufferfinance/Buffer-Protocol-v2/pull/8)
+
+Changes look good. Trade is now removed from queue before sending user refund during option opening to avoid potential reetrancy. Canceling already removed trade before sending refund so no change needed there.
+
 
 
 # Issue M-2: The `_fee()` function is wrongly implemented in the code 
@@ -317,6 +348,16 @@ The `_fee()` function needs to calculate the fees in this way
 ```solidity
 total_fee = (5000 * amount)/ (10000 - sf)
 ```
+
+## Discussion
+
+**0x00052**
+
+Fixed in [PR#22](https://github.com/bufferfinance/Buffer-Protocol-v2/pull/22)
+
+Changes look good. New math returns correct values. Validated for both unit fee and option amount.
+
+
 
 # Issue M-3: resolveQueuedTrades is intended to be non atomic but invalid signature can still cause entire transaction to revert 
 
@@ -426,6 +467,17 @@ This issue's escalations have been accepted!
 
 Contestants' payouts and scores will be updated according to the changes made on this issue.
 
+**bufferfinance**
+
+Will fix this
+
+
+**0x00052**
+
+Fixed in [PR#28](https://github.com/bufferfinance/Buffer-Protocol-v2/pull/28)
+
+Changes look good.  ECDSA.recover changed to ECDSA.tryRecover to prevent any revert when recovering signatures
+
 
 
 # Issue M-4: Insufficient support for fee-on-transfer tokens 
@@ -433,7 +485,7 @@ Contestants' payouts and scores will be updated according to the changes made on
 Source: https://github.com/sherlock-audit/2022-11-buffer-judging/issues/76 
 
 ## Found by 
-pashov, supernova, rvierdiiev, Deivitto, jonatascm, KingNFT, \_\_141345\_\_, cccz, dipp, Bnke0x0, eierina
+supernova, rvierdiiev, eierina, cccz, KingNFT, dipp, \_\_141345\_\_, Bnke0x0, jonatascm, pashov, Deivitto
 
 ## Summary
 
@@ -477,6 +529,12 @@ Only an issue if project intends to support fee-on-transfer tokens as underlying
 
 Not supporting fee-on-transfer tokens for now.
 
+**bufferfinance**
+
+Buffer won't be supporting fee-on-transfer tokens. Thus we are not fixing it.
+
+
+
 
 
 # Issue M-5: Limited support to a specific subset of ERC20 tokens 
@@ -484,7 +542,7 @@ Not supporting fee-on-transfer tokens for now.
 Source: https://github.com/sherlock-audit/2022-11-buffer-judging/issues/73 
 
 ## Found by 
-pashov, hansfriese, adriro, 0x4non, Deivitto, 0xadrii, eyexploit, Bnke0x0, ak1, HonorLt, aphak5010, 0xcc, cccz, rvierdiiev, 0x007, peanuts, jonatascm, bin2chen, ctf\_sec, eierina, minhtrng, 0xheynacho, sach1r0, \_\_141345\_\_, m\_Rassska
+m\_Rassska, ctf\_sec, ak1, cccz, Bnke0x0, 0x007, minhtrng, rvierdiiev, 0xadrii, hansfriese, 0xheynacho, HonorLt, bin2chen, eierina, aphak5010, \_\_141345\_\_, pashov, eyexploit, 0xcc, peanuts, sach1r0, 0x4non, adriro, jonatascm, Deivitto
 
 ## Summary
 
@@ -597,4 +655,14 @@ if (returndata.length > 0) {
 	require(address(token).code.length > 0, "Not a token address!");
 }
 ```
+
+## Discussion
+
+**0x00052**
+
+Fixed in [PR#18](https://github.com/bufferfinance/Buffer-Protocol-v2/pull/18)
+
+Changes look good. Using safeERC20 for ERC20 transfers
+
+
 
